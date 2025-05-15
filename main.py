@@ -79,51 +79,54 @@ class ConversionTask:
 
     def process(self, input_folder, output_folder, compression_level, progress_callback, log_callback):
         """Exécute la conversion des fichiers"""
-        if not input_folder or not output_folder:
-            raise ValueError("Les dossiers source et destination doivent être spécifiés")
-
-        self.file_manager.create_output_folder(output_folder)
-        video_files = self.file_manager.get_video_files(input_folder)
-        
-        if not video_files:
-            raise ValueError("Aucun fichier MP4 trouvé dans le dossier source")
-
         self.running = True
-        self.total_files = len(video_files)
-        self.processed_files = 0
-        
-        log_callback(f"Début de conversion ({compression_level}) - {self.total_files} fichiers")
+        try:
+            if not input_folder or not output_folder:
+                raise ValueError("Les dossiers source et destination doivent être spécifiés")
 
-        for i, input_file in enumerate(video_files, 1):
-            if not self.running:
-                break
-
-            self.processed_files = i
-            filename = os.path.basename(input_file)
-            output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_comp.mp4")
+            self.file_manager.create_output_folder(output_folder)
+            video_files = self.file_manager.get_video_files(input_folder)
             
-            progress_callback((i-1)/self.total_files*100, filename)
-            log_callback(f"Traitement: {filename}")
+            if not video_files:
+                raise ValueError("Aucun fichier MP4 trouvé dans le dossier source")
 
-            try:
-                success = self.converter.convert(input_file, output_file, compression_level)
-                if success:
-                    log_callback("✓ Succès")
-                else:
-                    log_callback("✗ Échec")
-                    raise Exception(f"Échec de la conversion de {filename}")
-            except Exception as e:
-                log_callback(f"Erreur: {str(e)}")
-                raise
+            self.total_files = len(video_files)
+            self.processed_files = 0
+            
+            log_callback(f"Début de conversion ({compression_level}) - {self.total_files} fichiers")
 
-            progress_callback(i/self.total_files*100)
+            for i, input_file in enumerate(video_files, 1):
+                if not self.running:
+                    break
 
-        if self.running:
-            log_callback("✅ Conversion terminée")
-            return True
-        else:
-            log_callback("⛔ Conversion interrompue")
-            return False
+                self.processed_files = i
+                filename = os.path.basename(input_file)
+                output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_comp.mp4")
+                
+                progress_callback((i-1)/self.total_files*100, filename)
+                log_callback(f"Traitement: {filename}")
+
+                try:
+                    success = self.converter.convert(input_file, output_file, compression_level)
+                    if success:
+                        log_callback("✓ Succès")
+                    else:
+                        log_callback("✗ Échec")
+                        raise Exception(f"Échec de la conversion de {filename}")
+                except Exception as e:
+                    log_callback(f"Erreur: {str(e)}")
+                    raise
+
+                progress_callback(i/self.total_files*100)
+
+            if self.running:
+                log_callback("✅ Conversion terminée")
+                return True
+            else:
+                log_callback("⛔ Conversion interrompue")
+                return False
+        finally:
+            self.running = False
 
     def stop(self):
         """Arrête la conversion en cours"""
@@ -264,6 +267,7 @@ class MainApplication(tk.Tk):
 
         self.convert_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
+        self.status_label.config(text="Conversion en cours...")
         
         def run_conversion():
             try:
@@ -277,15 +281,19 @@ class MainApplication(tk.Tk):
                 
                 if success:
                     messagebox.showinfo("Terminé", "Conversion terminée avec succès!")
+                    self.status_label.config(text="Prêt - Conversion terminée")
                 else:
                     messagebox.showwarning("Interrompu", "Conversion interrompue")
+                    self.status_label.config(text="Prêt - Conversion interrompue")
                     
             except Exception as e:
                 self._log_message(f"❌ Erreur: {str(e)}")
                 messagebox.showerror("Erreur", str(e))
+                self.status_label.config(text="Prêt - Erreur de conversion")
             finally:
                 self.convert_btn.config(state=tk.NORMAL)
                 self.stop_btn.config(state=tk.DISABLED)
+                self.progress.set(0)
 
         Thread(target=run_conversion, daemon=True).start()
 
@@ -293,8 +301,9 @@ class MainApplication(tk.Tk):
         """Arrête la conversion"""
         self.conversion_task.stop()
         self._log_message("⛔ Conversion arrêtée par l'utilisateur")
-        self.status_label.config(text="Arrêté")
+        self.status_label.config(text="Prêt - Conversion arrêtée")
         self.stop_btn.config(state=tk.DISABLED)
+        self.convert_btn.config(state=tk.NORMAL)
 
 
 if __name__ == "__main__":
