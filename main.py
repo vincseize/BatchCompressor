@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, scrolledtext
@@ -82,7 +81,6 @@ class BatchVideoConverterApp:
         if folder:
             self.input_folder.set(folder)
             self.output_folder.set(os.path.join(folder, "mp4_comp"))
-            # Mettre à jour immédiatement le compteur de fichiers
             self.update_file_count()
     
     def select_output_folder(self):
@@ -98,6 +96,7 @@ class BatchVideoConverterApp:
             self.total_files = len(video_files)
             self.file_counter.config(text=f"0/{self.total_files} fichiers traités")
             self.status_label.config(text=f"Prêt - {self.total_files} vidéos à convertir")
+            self.progress.set(0)
     
     def get_ffmpeg_path(self):
         """Retourne le chemin de ffmpeg selon l'environnement"""
@@ -131,16 +130,16 @@ class BatchVideoConverterApp:
     
     def get_video_files(self, folder):
         """Retourne la liste des fichiers MP4 dans le dossier (sans sous-dossiers) sans doublons"""
-        video_files = set()  # Utilisation d'un set pour éviter les doublons
+        video_files = set()
         for f in glob.glob(os.path.join(folder, '*')):
             if os.path.isfile(f) and os.path.dirname(f) == folder:
                 filename_lower = f.lower()
                 if filename_lower.endswith('.mp4'):
-                    video_files.add(f)  # Ajoute le fichier avec sa casse originale
-        return sorted(video_files)  # Retourne une liste triée
+                    video_files.add(f)
+        return sorted(video_files)
     
     def convert_video(self, input_file, output_file):
-        """Convertit un fichier vidéo avec suivi de progression réel"""
+        """Convertit un fichier vidéo sans suivi de progression individuelle"""
         ffmpeg_path = self.get_ffmpeg_path()
         
         try:
@@ -148,7 +147,6 @@ class BatchVideoConverterApp:
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-            # Construction de la commande FFmpeg
             cmd = [
                 ffmpeg_path,
                 '-y',
@@ -171,50 +169,12 @@ class BatchVideoConverterApp:
                 stdout=subprocess.PIPE,
                 universal_newlines=True,
                 startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                bufsize=1
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
+            
+            process.wait()
 
-            # Lecture de la progression en temps réel
-            duration = None
-            while True:
-                if process.poll() is not None:
-                    break
-                    
-                line = process.stderr.readline()
-                if not line:
-                    continue
-                    
-                # Détection de la durée totale
-                if "Duration:" in line:
-                    try:
-                        time_str = line.split("Duration:")[1].split(",")[0].strip()
-                        h, m, s = time_str.split(':')
-                        duration = float(h) * 3600 + float(m) * 60 + float(s)
-                    except:
-                        pass
-                
-                # Détection du temps écoulé
-                elif "time=" in line:
-                    try:
-                        time_str = line.split("time=")[1].split(" ")[0]
-                        h, m, s = time_str.split(':')
-                        current_time = float(h) * 3600 + float(m) * 60 + float(s)
-                        if duration:
-                            progress_percent = (current_time / duration) * 100
-                            self.progress.set(progress_percent)
-                            self.root.update_idletasks()
-                    except:
-                        pass
-
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(
-                    process.returncode, 
-                    cmd, 
-                    process.stderr.read()
-                )
-
-            return os.path.exists(output_file)
+            return process.returncode == 0 and os.path.exists(output_file)
 
         except Exception as e:
             self.log_message(f"Erreur lors de la conversion de {input_file}: {str(e)}")
@@ -233,7 +193,7 @@ class BatchVideoConverterApp:
         # Création du dossier de sortie si nécessaire
         os.makedirs(output_folder, exist_ok=True)
         
-        # Recherche des fichiers MP4 (uniquement dans le dossier racine)
+        # Recherche des fichiers MP4
         video_files = self.get_video_files(input_folder)
         
         if not video_files:
@@ -241,7 +201,7 @@ class BatchVideoConverterApp:
             self.running = False
             return
         
-        # Initialisation des compteurs
+        # Initialisation
         self.total_files = len(video_files)
         self.processed_files = 0
         self.progress.set(0)
@@ -258,22 +218,25 @@ class BatchVideoConverterApp:
             output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_comp.mp4")
             
             self.current_file.set(filename)
-            self.progress.set(0)
-            self.update_progress()
             self.log_message(f"Traitement du fichier {i}/{self.total_files}: {filename}")
             
+            # Mise à jour de la progression avant conversion
+            global_progress = ((i-1) / self.total_files) * 100
+            self.progress.set(global_progress)
+            self.update_progress()
+            
             success = self.convert_video(input_file, output_file)
+            
+            # Mise à jour après conversion
+            global_progress = (i / self.total_files) * 100
+            self.progress.set(global_progress)
+            self.update_progress()
             
             if success:
                 self.log_message(f"✓ Conversion réussie: {filename}")
             elif self.running:
                 self.log_message(f"✗ Échec de la conversion: {filename}")
                 messagebox.showerror("Erreur", f"Échec de la conversion de {filename}")
-            
-            # Mise à jour de la progression globale
-            global_progress = (i / self.total_files) * 100
-            self.progress.set(global_progress)
-            self.update_progress()
         
         # Fin du traitement
         if self.running:
