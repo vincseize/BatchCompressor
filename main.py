@@ -82,11 +82,22 @@ class BatchVideoConverterApp:
         if folder:
             self.input_folder.set(folder)
             self.output_folder.set(os.path.join(folder, "mp4_comp"))
+            # Mettre à jour immédiatement le compteur de fichiers
+            self.update_file_count()
     
     def select_output_folder(self):
         folder = filedialog.askdirectory(title="Sélectionner le dossier de sortie")
         if folder:
             self.output_folder.set(folder)
+    
+    def update_file_count(self):
+        """Met à jour le compteur de fichiers quand le dossier source change"""
+        input_folder = self.input_folder.get()
+        if input_folder:
+            video_files = self.get_video_files(input_folder)
+            self.total_files = len(video_files)
+            self.file_counter.config(text=f"0/{self.total_files} fichiers traités")
+            self.status_label.config(text=f"Prêt - {self.total_files} vidéos à convertir")
     
     def get_ffmpeg_path(self):
         """Retourne le chemin de ffmpeg selon l'environnement"""
