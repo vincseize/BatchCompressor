@@ -5,7 +5,7 @@ block_cipher = None
 
 
 a = Analysis(
-    ['main.py'],
+    ['Kcompressor.py'],
     pathex=[],
     binaries=[],
     datas=[('ffmpeg/bin/ffmpeg.exe', 'ffmpeg/bin')],
@@ -28,7 +28,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='main',
+    name='Kcompressor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
