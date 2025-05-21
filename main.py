@@ -67,6 +67,15 @@ class FileManager:
         """Crée le dossier de sortie si nécessaire"""
         os.makedirs(path, exist_ok=True)
 
+    @staticmethod
+    def get_file_size_mb(filepath):
+        """Retourne la taille du fichier en Mo, arrondie à 2 décimales"""
+        try:
+            size_bytes = os.path.getsize(filepath)
+            return round(size_bytes / (1024 * 1024), 2)
+        except Exception:
+            return None
+
 
 class ConversionTask:
     """Gère une tâche de conversion avec suivi de progression"""
@@ -102,22 +111,33 @@ class ConversionTask:
                 self.processed_files = i
                 filename = os.path.basename(input_file)
                 output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_comp.mp4")
-                
-                progress_callback((i-1)/self.total_files*100, filename)
+
+                input_size = self.file_manager.get_file_size_mb(input_file)
+                if input_size is not None:
+                    log_callback(f"Fichier : {filename} ({input_size} Mo)")
+
+                # Met à jour la progression AVANT la conversion, avec nom fichier
+                progress_callback((i - 1) / self.total_files * 100, filename)
                 log_callback(f"Traitement: {filename}")
 
                 try:
                     success = self.converter.convert(input_file, output_file, compression_level)
                     if success:
+                        output_size = self.file_manager.get_file_size_mb(output_file)
+                        if output_size is not None:
+                            log_callback(f"Compression : {input_size} Mo → {output_size} Mo")
                         log_callback("✓ Succès")
                     else:
                         log_callback("✗ Échec")
                         raise Exception(f"Échec de la conversion de {filename}")
+
                 except Exception as e:
                     log_callback(f"Erreur: {str(e)}")
                     raise
 
-                progress_callback(i/self.total_files*100)
+                # Met à jour la progression APRÈS la conversion, avec nom fichier aussi
+                progress_callback(i / self.total_files * 100, filename)
+
 
             if self.running:
                 log_callback("✅ Conversion terminée")
@@ -261,50 +281,70 @@ class MainApplication(tk.Tk):
         self.update_idletasks()
 
     def _start_conversion(self):
-        """Démarre la conversion"""
+        """Lance la conversion dans un thread séparé"""
         if self.conversion_task.running:
             return
 
         self.convert_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
-        self.status_label.config(text="Conversion en cours...")
-        
-        def run_conversion():
-            try:
-                success = self.conversion_task.process(
-                    input_folder=self.input_folder.get(),
-                    output_folder=self.output_folder.get(),
-                    compression_level=self.compression_level.get(),
-                    progress_callback=self._update_progress,
-                    log_callback=self._log_message
-                )
-                
-                if success:
-                    messagebox.showinfo("Terminé", "Conversion terminée avec succès!")
-                    self.status_label.config(text="Prêt - Conversion terminée")
-                else:
-                    messagebox.showwarning("Interrompu", "Conversion interrompue")
-                    self.status_label.config(text="Prêt - Conversion interrompue")
-                    
-            except Exception as e:
-                self._log_message(f"❌ Erreur: {str(e)}")
-                messagebox.showerror("Erreur", str(e))
-                self.status_label.config(text="Prêt - Erreur de conversion")
-            finally:
-                self.convert_btn.config(state=tk.NORMAL)
-                self.stop_btn.config(state=tk.DISABLED)
-                self.progress.set(0)
+        self.progress.set(0)
+        self.current_file.set("")
+        self.log_widget.configure(state='normal')
+        self.log_widget.delete('1.0', tk.END)
+        self.log_widget.configure(state='disabled')
+        self._log_message("Préparation de la conversion...")
 
-        Thread(target=run_conversion, daemon=True).start()
+        self.status_label.config(text="Conversion en cours...")
+        self._animate_dots = True
+        self._dot_count = 0
+        self._update_dots()
+
+        thread = Thread(
+            target=self._run_conversion_thread,
+            args=(self.input_folder.get(), self.output_folder.get(), self.compression_level.get())
+        )
+        thread.start()
+
+    def _update_dots(self):
+        """Affiche l'animation '...' pendant la conversion"""
+        if self._animate_dots:
+            self._dot_count = (self._dot_count + 1) % 4
+            self.status_label.config(text="Conversion en cours" + "." * self._dot_count)
+            self.after(500, self._update_dots)
+
+    def _run_conversion_thread(self, input_folder, output_folder, level):
+        try:
+            self.conversion_task.process(
+                input_folder, output_folder, level,
+                self._update_progress,
+                self._log_message
+            )
+        except Exception as e:
+            self._log_message(f"Erreur fatale : {str(e)}")
+        finally:
+            self._on_conversion_finished()
+
+    def _on_conversion_finished(self):
+        """Remet l'état initial après conversion"""
+        self.convert_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        # Ici, conversion terminée = running == False
+        if self.conversion_task.running:
+            self.status_label.config(text="Conversion en cours")
+        else:
+            self.status_label.config(text="Conversion terminée")
+        self._animate_dots = False
+        self.current_file.set("")
+        self.progress.set(100)
+
 
     def _stop_conversion(self):
-        """Arrête la conversion"""
-        self.conversion_task.stop()
-        self._log_message("⛔ Conversion arrêtée par l'utilisateur")
-        self.status_label.config(text="Prêt - Conversion arrêtée")
-        self.stop_btn.config(state=tk.DISABLED)
-        self.convert_btn.config(state=tk.NORMAL)
-
+        """Demande l'arrêt de la conversion"""
+        if self.conversion_task.running:
+            self.conversion_task.stop()
+            self.status_label.config(text="Arrêt demandé...")
+            self._log_message("Arrêt en cours...")
+            self._animate_dots = False
 
 if __name__ == "__main__":
     app = MainApplication()
