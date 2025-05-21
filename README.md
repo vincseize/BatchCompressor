@@ -7,3 +7,6 @@ pyinstaller --onefile --windowed --add-data "ffmpeg/bin/ffmpeg.exe;ffmpeg/bin" -
 ( ou main.py etc ... )
 
 -> /dist/Kcompressor.exe
+
+# Version
+WIN 11
