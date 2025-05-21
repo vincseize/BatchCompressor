@@ -181,6 +181,16 @@ class MainApplication(tk.Tk):
         else:
             base_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(base_dir, 'ffmpeg', 'bin', 'ffmpeg.exe')
+    
+    def _get_total_size_mb(self, folder):
+        video_files = self.file_manager.get_video_files(folder)
+        total_size = 0.0
+        for f in video_files:
+            size = self.file_manager.get_file_size_mb(f)
+            if size:
+                total_size += size
+        return round(total_size, 2)
+
 
     def _setup_ui(self):
         """Configure l'interface utilisateur"""
@@ -246,6 +256,10 @@ class MainApplication(tk.Tk):
             self.input_folder.set(folder)
             self.output_folder.set(os.path.join(folder, "mp4_comp"))
             self._update_file_count()
+
+            total_size = self._get_total_size_mb(folder)
+            self._log_message(f"Taille totale des fichiers MP4 dans le dossier : {total_size} Mo")
+
 
     def _select_output_folder(self):
         folder = filedialog.askdirectory(title="Sélectionner le dossier de sortie")
